@@ -26,7 +26,7 @@ class CommandRow(Adw.ActionRow):
         self._on_output = on_output  # fn(text, label)
 
         self.set_title(config.name)
-        self.set_subtitle(config.command)
+        self.set_subtitle(GLib.markup_escape_text(config.command))
 
         self._run_btn = Gtk.Button(label="Run")
         self._run_btn.add_css_class("flat")

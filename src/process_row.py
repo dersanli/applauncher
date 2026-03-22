@@ -6,7 +6,7 @@ import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Adw, Gtk
+from gi.repository import Adw, GLib, Gtk
 
 from .process_manager import ManagedProcess, ProcessStatus
 
@@ -33,7 +33,7 @@ class ProcessRow(Adw.ActionRow):
         self._on_select = on_select
 
         self.set_title(process.name)
-        self.set_subtitle(process.command)
+        self.set_subtitle(GLib.markup_escape_text(process.command))
         self.set_activatable(True)
 
         # ── status dot ───────────────────────────────────────────────────────
@@ -49,7 +49,7 @@ class ProcessRow(Adw.ActionRow):
         self._start_btn = Gtk.Button(label="Start")
         self._start_btn.add_css_class("suggested-action")
         self._start_btn.add_css_class("flat")
-        self._start_btn.connect("clicked", lambda _: process.start())
+        self._start_btn.connect("clicked", self._on_start_clicked)
         box.append(self._start_btn)
 
         self._stop_btn = Gtk.Button(label="Stop")
@@ -61,11 +61,24 @@ class ProcessRow(Adw.ActionRow):
         self.add_suffix(box)
         self._refresh_buttons()
 
-        # Wire up callbacks
-        process.on_status_change = self._on_status_change
+        # Chain onto any existing on_status_change (e.g. crash notifier from project_view)
+        _prev_status_cb = process.on_status_change
+
+        def _chained_status(status: str) -> None:
+            self._on_status_change(status)
+            if _prev_status_cb:
+                _prev_status_cb(status)
+
+        process.on_status_change = _chained_status
         self.connect("activated", lambda _: self._on_select and self._on_select(process))
 
     # ── private ──────────────────────────────────────────────────────────────
+
+    def _on_start_clicked(self, _btn) -> None:
+        # Show logs immediately when Start is pressed
+        if self._on_select:
+            self._on_select(self.process)
+        self.process.start()
 
     def _on_status_change(self, status: str) -> None:
         self._refresh_dot()
