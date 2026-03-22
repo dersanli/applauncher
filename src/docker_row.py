@@ -5,8 +5,7 @@ from typing import Callable, Optional
 import gi
 
 gi.require_version("Gtk", "4.0")
-gi.require_version("Adw", "1")
-from gi.repository import Adw, Gtk
+from gi.repository import Gtk
 
 from .docker_manager import DockerManager
 
@@ -20,7 +19,7 @@ _STATUS_COLORS = {
 }
 
 
-class DockerRow(Adw.ActionRow):
+class DockerRow(Gtk.ListBoxRow):
     def __init__(
         self,
         container: dict,
@@ -31,37 +30,56 @@ class DockerRow(Adw.ActionRow):
         self._name = container["name"]
         self._docker = docker
         self._on_refresh = on_refresh
+        self.set_activatable(False)
 
-        self.set_title(container["name"])
-        self.set_subtitle(container["image"])
+        outer = Gtk.Box(
+            orientation=Gtk.Orientation.HORIZONTAL,
+            spacing=8,
+            margin_start=12,
+            margin_end=8,
+            margin_top=8,
+            margin_bottom=8,
+        )
 
-        # ── status dot ───────────────────────────────────────────────────────
         self._dot = Gtk.Label()
         self._dot.set_valign(Gtk.Align.CENTER)
-        self.add_prefix(self._dot)
+        outer.append(self._dot)
 
-        # ── buttons ──────────────────────────────────────────────────────────
-        box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
-        box.set_valign(Gtk.Align.CENTER)
+        text_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        text_box.set_hexpand(True)
+        text_box.set_valign(Gtk.Align.CENTER)
+
+        title = Gtk.Label(label=container["name"])
+        title.set_halign(Gtk.Align.START)
+        title.add_css_class("body")
+
+        subtitle = Gtk.Label(label=container["image"])
+        subtitle.set_halign(Gtk.Align.START)
+        subtitle.add_css_class("caption")
+        subtitle.add_css_class("dim-label")
+
+        text_box.append(title)
+        text_box.append(subtitle)
+        outer.append(text_box)
 
         self._start_btn = Gtk.Button(label="Start")
         self._start_btn.add_css_class("suggested-action")
-        self._start_btn.add_css_class("flat")
-        self._start_btn.connect("clicked", self._on_start)
-        box.append(self._start_btn)
+        self._start_btn.set_valign(Gtk.Align.CENTER)
+        self._start_btn.connect("clicked", lambda _: self._docker.start_container(self._name, callback=self._on_refresh))
+        outer.append(self._start_btn)
 
         self._stop_btn = Gtk.Button(label="Stop")
         self._stop_btn.add_css_class("destructive-action")
-        self._stop_btn.add_css_class("flat")
-        self._stop_btn.connect("clicked", self._on_stop)
-        box.append(self._stop_btn)
+        self._stop_btn.set_valign(Gtk.Align.CENTER)
+        self._stop_btn.connect("clicked", lambda _: self._docker.stop_container(self._name, callback=self._on_refresh))
+        outer.append(self._stop_btn)
 
         restart_btn = Gtk.Button(label="Restart")
-        restart_btn.add_css_class("flat")
-        restart_btn.connect("clicked", self._on_restart)
-        box.append(restart_btn)
+        restart_btn.set_valign(Gtk.Align.CENTER)
+        restart_btn.connect("clicked", lambda _: self._docker.restart_container(self._name, callback=self._on_refresh))
+        outer.append(restart_btn)
 
-        self.add_suffix(box)
+        self.set_child(outer)
         self.update(container)
 
     def update(self, container: dict) -> None:
@@ -72,14 +90,3 @@ class DockerRow(Adw.ActionRow):
         running = status == "running"
         self._start_btn.set_visible(not running)
         self._stop_btn.set_visible(running)
-
-    # ── private ──────────────────────────────────────────────────────────────
-
-    def _on_start(self, _btn) -> None:
-        self._docker.start_container(self._name, callback=self._on_refresh)
-
-    def _on_stop(self, _btn) -> None:
-        self._docker.stop_container(self._name, callback=self._on_refresh)
-
-    def _on_restart(self, _btn) -> None:
-        self._docker.restart_container(self._name, callback=self._on_refresh)

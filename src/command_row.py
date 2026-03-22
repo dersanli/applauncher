@@ -7,13 +7,12 @@ from typing import Callable, Optional
 import gi
 
 gi.require_version("Gtk", "4.0")
-gi.require_version("Adw", "1")
-from gi.repository import Adw, GLib, Gtk
+from gi.repository import GLib, Gtk
 
 from .config import CommandConfig
 
 
-class CommandRow(Adw.ActionRow):
+class CommandRow(Gtk.ListBoxRow):
     def __init__(
         self,
         config: CommandConfig,
@@ -23,21 +22,47 @@ class CommandRow(Adw.ActionRow):
         super().__init__()
         self._config = config
         self._cwd = cwd
-        self._on_output = on_output  # fn(text, label)
+        self._on_output = on_output
+        self.set_activatable(False)
 
-        self.set_title(config.name)
-        self.set_subtitle(GLib.markup_escape_text(config.command))
+        outer = Gtk.Box(
+            orientation=Gtk.Orientation.HORIZONTAL,
+            spacing=8,
+            margin_start=12,
+            margin_end=8,
+            margin_top=8,
+            margin_bottom=8,
+        )
+
+        text_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        text_box.set_hexpand(True)
+        text_box.set_valign(Gtk.Align.CENTER)
+
+        title = Gtk.Label(label=config.name)
+        title.set_halign(Gtk.Align.START)
+        title.add_css_class("body")
+
+        subtitle = Gtk.Label(label=config.command)
+        subtitle.set_halign(Gtk.Align.START)
+        subtitle.add_css_class("caption")
+        subtitle.add_css_class("dim-label")
+        subtitle.set_ellipsize(3)
+        subtitle.set_max_width_chars(60)
+
+        text_box.append(title)
+        text_box.append(subtitle)
+        outer.append(text_box)
 
         self._run_btn = Gtk.Button(label="Run")
-        self._run_btn.add_css_class("flat")
         self._run_btn.set_valign(Gtk.Align.CENTER)
         self._run_btn.connect("clicked", self._on_run)
-        self.add_suffix(self._run_btn)
+        outer.append(self._run_btn)
+
+        self.set_child(outer)
 
     def _on_run(self, btn: Gtk.Button) -> None:
         btn.set_sensitive(False)
         btn.set_label("Running…")
-
         if self._on_output:
             self._on_output(f"\n$ {self._config.command}\n", self._config.name)
 

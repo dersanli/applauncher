@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import subprocess
 import threading
 from typing import Callable, Optional
@@ -36,11 +37,13 @@ class ManagedProcess:
         if self.is_running:
             return
         self.log_lines.clear()
+        cwd = os.path.expanduser(self.cwd)
         try:
             self._process = subprocess.Popen(
                 self.command,
                 shell=True,
-                cwd=self.cwd,
+                executable="/bin/bash",
+                cwd=cwd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
