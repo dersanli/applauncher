@@ -4,10 +4,11 @@ import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Adw, GObject, Gtk
+from gi.repository import Adw, GLib, GObject, Gtk
 
 from .config import ProjectConfig, load_config, save_config
 from .docker_manager import DockerManager
+from .docker_view import DockerView
 from .project_view import ProjectView
 from .settings_window import SettingsWindow
 from .sidebar import Sidebar
@@ -20,10 +21,10 @@ class DevLauncherWindow(Adw.ApplicationWindow):
         self.set_default_size(1280, 760)
 
         self._projects: list[ProjectConfig] = []
+        self._quitting = False
 
         # ── Docker ───────────────────────────────────────────────────────────
         self._docker = DockerManager()
-        docker_ok = self._docker.connect()
 
         # ── Main layout ──────────────────────────────────────────────────────
         toolbar_view = Adw.ToolbarView()
@@ -65,21 +66,30 @@ class DevLauncherWindow(Adw.ApplicationWindow):
         self._sidebar = Sidebar(
             on_project_selected=self._on_project_selected,
             on_add_project=self._on_add_project,
+            on_docker_selected=self._on_docker_selected,
         )
         self._split.set_sidebar(self._sidebar)
 
-        # Project view
-        self._project_view = ProjectView(self._docker)
-        self._split.set_content(self._project_view)
+        # Content stack
+        self._stack = Gtk.Stack()
+        self._stack.set_transition_type(Gtk.StackTransitionType.CROSSFADE)
 
-        # Docker subtitle
-        if docker_ok:
-            title.set_subtitle("Docker connected")
-            self._docker.start_polling(3000)
-        else:
-            title.set_subtitle("Docker unavailable")
+        self._project_view = ProjectView()
+        self._docker_view = DockerView(
+            self._docker, on_connected=self._on_docker_reconnected
+        )
 
-        # Load projects
+        self._stack.add_named(self._project_view, "project")
+        self._stack.add_named(self._docker_view, "docker")
+        self._split.set_content(self._stack)
+
+        self._title = title
+        self._title.set_subtitle("Connecting to Docker…")
+
+        # Connect to Docker in background to avoid blocking the UI
+        import threading
+        threading.Thread(target=self._connect_docker, daemon=True).start()
+
         self._load_projects()
 
     # ── private ──────────────────────────────────────────────────────────────
@@ -89,7 +99,11 @@ class DevLauncherWindow(Adw.ApplicationWindow):
         self._sidebar.load_projects(self._projects)
 
     def _on_project_selected(self, project: ProjectConfig) -> None:
+        self._stack.set_visible_child_name("project")
         self._project_view.load_project(project)
+
+    def _on_docker_selected(self) -> None:
+        self._stack.set_visible_child_name("docker")
 
     def _on_add_project(self) -> None:
         self._on_settings(None)
@@ -101,6 +115,32 @@ class DevLauncherWindow(Adw.ApplicationWindow):
             transient_for=self,
         )
         win.present()
+
+    def do_close_request(self) -> bool:
+        if self._quitting:
+            return False  # allow normal destroy → app quits
+        self.hide()
+        return True  # prevent destroy; keep app alive in tray
+
+    def _connect_docker(self) -> None:
+        ok = self._docker.connect()
+        GLib.idle_add(self._on_docker_connected, ok)
+
+    def _on_docker_connected(self, ok: bool) -> bool:
+        if ok:
+            self._title.set_subtitle("Docker connected")
+            self._docker.start_polling(3000)
+            self._docker_view.notify_docker_connected()
+        elif self._docker.is_desktop_context:
+            self._title.set_subtitle("Docker Desktop not running")
+            self._docker_view.notify_docker_unavailable()
+        else:
+            self._title.set_subtitle("Docker unavailable")
+        return False
+
+    def _on_docker_reconnected(self) -> None:
+        self._title.set_subtitle("Docker connected")
+        self._docker.start_polling(3000)
 
     def _on_settings_saved(self, projects: list[ProjectConfig]) -> None:
         self._projects = projects

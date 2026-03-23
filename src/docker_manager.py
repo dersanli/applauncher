@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import hashlib
+import json
+import os
 import threading
 from typing import Callable, Optional
 
@@ -11,6 +14,33 @@ try:
     DOCKER_AVAILABLE = True
 except ImportError:
     DOCKER_AVAILABLE = False
+
+
+def _active_context_name() -> str:
+    try:
+        config_path = os.path.expanduser("~/.docker/config.json")
+        with open(config_path) as f:
+            return json.load(f).get("currentContext", "default")
+    except Exception:
+        return "default"
+
+
+def _active_docker_socket() -> str | None:
+    """Return the socket URL for the active Docker context, or None to use default."""
+    try:
+        context_name = _active_context_name()
+        if context_name == "default":
+            return None
+        # Context metadata lives at ~/.docker/contexts/meta/<sha256(name)>/meta.json
+        name_hash = hashlib.sha256(context_name.encode()).hexdigest()
+        meta_path = os.path.expanduser(
+            f"~/.docker/contexts/meta/{name_hash}/meta.json"
+        )
+        with open(meta_path) as f:
+            meta = json.load(f)
+        return meta["Endpoints"]["docker"]["Host"]
+    except Exception:
+        return None
 
 
 class DockerManager:
@@ -26,7 +56,11 @@ class DockerManager:
         if not DOCKER_AVAILABLE:
             return False
         try:
-            self._client = docker.from_env()
+            socket_url = _active_docker_socket()
+            if socket_url:
+                self._client = docker.DockerClient(base_url=socket_url)
+            else:
+                self._client = docker.from_env()
             self._client.ping()
             self._available = True
             return True
@@ -37,6 +71,10 @@ class DockerManager:
     @property
     def is_available(self) -> bool:
         return self._available
+
+    @property
+    def is_desktop_context(self) -> bool:
+        return _active_context_name() == "desktop-linux"
 
     def get_containers(self) -> list[dict]:
         if not self._available or not self._client:

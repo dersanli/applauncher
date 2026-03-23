@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import threading
 from typing import Optional
 
 import gi
@@ -12,8 +11,6 @@ from gi.repository import Adw, GLib, Gtk
 from . import notifications
 from .command_row import CommandRow
 from .config import ProjectConfig
-from .docker_manager import DockerManager
-from .docker_row import DockerRow
 from .log_pane import LogPane
 from .process_manager import ManagedProcess, ProcessStatus
 from .process_row import ProcessRow
@@ -38,14 +35,11 @@ def _make_section(title: str) -> tuple[Gtk.Box, Gtk.ListBox]:
 
 
 class ProjectView(Gtk.Box):
-    def __init__(self, docker: DockerManager) -> None:
+    def __init__(self) -> None:
         super().__init__(orientation=Gtk.Orientation.VERTICAL)
-        self._docker = docker
         self._project: Optional[ProjectConfig] = None
         self._processes: dict[str, ManagedProcess] = {}
-        self._docker_rows: dict[str, DockerRow] = {}
         self._process_rows: list[ProcessRow] = []
-        self._docker_row_list: list[DockerRow] = []
         self._command_rows: list[CommandRow] = []
 
         # ── empty state ──────────────────────────────────────────────────────
@@ -76,11 +70,9 @@ class ProjectView(Gtk.Box):
         )
 
         proc_section, self._proc_list = _make_section("Processes")
-        docker_section, self._docker_list = _make_section("Docker Containers")
         cmd_section, self._cmd_list = _make_section("Commands")
 
         inner.append(proc_section)
-        inner.append(docker_section)
         inner.append(cmd_section)
         clamp.set_child(inner)
         scroll.set_child(clamp)
@@ -95,8 +87,6 @@ class ProjectView(Gtk.Box):
         self.append(self._empty)
         self.append(self._content)
         self._content.set_visible(False)
-
-        self._docker.on_containers_updated = self._on_containers_updated
 
     # ── public API ───────────────────────────────────────────────────────────
 
@@ -122,8 +112,6 @@ class ProjectView(Gtk.Box):
             self._cmd_list.append(row)
             self._command_rows.append(row)
 
-        self._refresh_docker()
-
     def stop_all(self) -> None:
         for proc in self._processes.values():
             if proc.is_running:
@@ -135,15 +123,11 @@ class ProjectView(Gtk.Box):
         self.stop_all()
         for row in self._process_rows:
             self._proc_list.remove(row)
-        for row in self._docker_row_list:
-            self._docker_list.remove(row)
         for row in self._command_rows:
             self._cmd_list.remove(row)
         self._process_rows.clear()
-        self._docker_row_list.clear()
         self._command_rows.clear()
         self._processes.clear()
-        self._docker_rows.clear()
         self._log_pane.set_process(None)
 
     def _make_crash_handler(self, proc: ManagedProcess, project_name: str):
@@ -154,32 +138,3 @@ class ProjectView(Gtk.Box):
 
     def _on_command_output(self, text: str, label: str) -> None:
         self._log_pane.append_text(text, f"Command — {label}")
-
-    def _refresh_docker(self) -> None:
-        if not self._docker.is_available:
-            return
-
-        def fetch() -> None:
-            containers = self._docker.get_containers()
-            GLib.idle_add(self._on_containers_updated, containers)
-
-        threading.Thread(target=fetch, daemon=True).start()
-
-    def _on_containers_updated(self, containers: list[dict]) -> None:
-        seen: set[str] = set()
-        for c in containers:
-            name = c["name"]
-            seen.add(name)
-            if name in self._docker_rows:
-                self._docker_rows[name].update(c)
-            else:
-                row = DockerRow(c, self._docker, on_refresh=self._refresh_docker)
-                self._docker_rows[name] = row
-                self._docker_list.append(row)
-                self._docker_row_list.append(row)
-        gone = [n for n in self._docker_rows if n not in seen]
-        for name in gone:
-            row = self._docker_rows.pop(name)
-            self._docker_list.remove(row)
-            if row in self._docker_row_list:
-                self._docker_row_list.remove(row)
