@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import subprocess
 import threading
 from typing import Callable, Optional
@@ -21,7 +22,7 @@ class CommandRow(Gtk.ListBoxRow):
     ) -> None:
         super().__init__()
         self._config = config
-        self._cwd = cwd
+        self._cwd = os.path.expanduser(cwd)
         self._on_output = on_output
         self.set_activatable(False)
 
