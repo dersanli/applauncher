@@ -38,7 +38,8 @@ class ProjectView(Gtk.Box):
     def __init__(self) -> None:
         super().__init__(orientation=Gtk.Orientation.VERTICAL)
         self._project: Optional[ProjectConfig] = None
-        self._processes: dict[str, ManagedProcess] = {}
+        self._all_processes: dict[str, dict[str, ManagedProcess]] = {}  # project_name -> {proc_name -> proc}
+        self._last_proc_name: dict[str, str] = {}  # project_name -> last selected proc name
         self._process_rows: list[ProcessRow] = []
         self._command_rows: list[CommandRow] = []
 
@@ -95,40 +96,66 @@ class ProjectView(Gtk.Box):
         self._empty.set_visible(False)
         self._content.set_visible(True)
 
-        self._clear_all()
+        self._unload_ui()
+
+        project_procs = self._all_processes.setdefault(project.name, {})
 
         for pc in project.processes:
-            proc = ManagedProcess(pc.name, pc.command, project.directory)
-            proc.on_status_change = self._make_crash_handler(proc, project.name)
-            self._processes[pc.name] = proc
-            row = ProcessRow(proc, on_select=self._log_pane.set_process)
+            if pc.name not in project_procs:
+                proc = ManagedProcess(pc.name, pc.command, project.directory)
+                proc.on_status_change = self._make_crash_handler(proc, project.name)
+                project_procs[pc.name] = proc
+                if pc.auto_start:
+                    GLib.idle_add(proc.start)
+            proc = project_procs[pc.name]
+            row = ProcessRow(proc, on_select=self._make_select_handler(project.name))
             self._proc_list.append(row)
             self._process_rows.append(row)
-            if pc.auto_start:
-                GLib.idle_add(proc.start)
+
+        # Restore last viewed process logs for this project, or clear
+        last_name = self._last_proc_name.get(project.name)
+        if last_name and last_name in project_procs:
+            self._log_pane.set_process(project_procs[last_name])
+        else:
+            self._log_pane.set_process(None)
 
         for cc in project.commands:
             row = CommandRow(cc, project.directory, on_output=self._on_command_output)
             self._cmd_list.append(row)
             self._command_rows.append(row)
 
+    def get_running_count(self) -> int:
+        return sum(
+            1
+            for procs in self._all_processes.values()
+            for proc in procs.values()
+            if proc.is_running
+        )
+
     def stop_all(self) -> None:
-        for proc in self._processes.values():
-            if proc.is_running:
-                proc.stop()
+        """Stop all processes across all projects."""
+        for project_procs in self._all_processes.values():
+            for proc in project_procs.values():
+                if proc.is_running:
+                    proc.stop()
 
     # ── private ──────────────────────────────────────────────────────────────
 
-    def _clear_all(self) -> None:
-        self.stop_all()
+    def _unload_ui(self) -> None:
+        """Remove UI rows without stopping processes or clearing logs."""
         for row in self._process_rows:
             self._proc_list.remove(row)
         for row in self._command_rows:
             self._cmd_list.remove(row)
         self._process_rows.clear()
         self._command_rows.clear()
-        self._processes.clear()
-        self._log_pane.set_process(None)
+        self._log_pane.detach()
+
+    def _make_select_handler(self, project_name: str):
+        def on_select(proc) -> None:
+            self._last_proc_name[project_name] = proc.name
+            self._log_pane.set_process(proc)
+        return on_select
 
     def _make_crash_handler(self, proc: ManagedProcess, project_name: str):
         def handler(status: str) -> None:

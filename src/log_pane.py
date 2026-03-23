@@ -63,10 +63,7 @@ class LogPane(Gtk.Box):
 
     def set_process(self, process) -> None:
         """Show logs for a running/stopped ManagedProcess."""
-        # Disconnect previous callback
-        if self._current_process and self._current_process.on_output == self._on_line:
-            self._current_process.on_output = None
-
+        self._detach_current()
         self._current_process = process
         self._buffer.set_text("")
 
@@ -79,6 +76,11 @@ class LogPane(Gtk.Box):
             self._insert(line)
         process.on_output = self._on_line
 
+    def detach(self) -> None:
+        """Disconnect from the current process without clearing the buffer."""
+        self._detach_current()
+        self._current_process = None
+
     def append_text(self, text: str, label: str = "Command output") -> None:
         """Append arbitrary text (used for one-off commands)."""
         if self._current_process:
@@ -90,6 +92,10 @@ class LogPane(Gtk.Box):
         self._insert(text)
 
     # ── private ──────────────────────────────────────────────────────────────
+
+    def _detach_current(self) -> None:
+        if self._current_process and self._current_process.on_output == self._on_line:
+            self._current_process.on_output = None
 
     def _on_line(self, line: str) -> None:
         self._insert(line)

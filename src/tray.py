@@ -291,8 +291,7 @@ class TrayIcon:
             GLib.idle_add(self._do_quit)
 
     def _do_quit(self) -> bool:
-        self._window._quitting = True
-        self._app.quit()
+        GLib.idle_add(self._window.request_quit)
         return False
 
     def _menu_method_call(

@@ -7,6 +7,7 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, GLib, GObject, Gtk
 
 from .config import ProjectConfig, load_config, save_config
+from .dashboard_view import DashboardView
 from .docker_manager import DockerManager
 from .docker_view import DockerView
 from .project_view import ProjectView
@@ -37,6 +38,11 @@ class DevLauncherWindow(Adw.ApplicationWindow):
         self._toggle_btn.set_tooltip_text("Toggle sidebar")
         self._toggle_btn.set_active(True)
         header.pack_start(self._toggle_btn)
+
+        home_btn = Gtk.Button(icon_name="go-home-symbolic")
+        home_btn.set_tooltip_text("Dashboard")
+        home_btn.connect("clicked", self._on_home)
+        header.pack_start(home_btn)
 
         title = Adw.WindowTitle(title="DevLauncher", subtitle="")
         header.set_title_widget(title)
@@ -74,11 +80,13 @@ class DevLauncherWindow(Adw.ApplicationWindow):
         self._stack = Gtk.Stack()
         self._stack.set_transition_type(Gtk.StackTransitionType.CROSSFADE)
 
+        self._dashboard_view = DashboardView(on_project_selected=self._on_project_selected)
         self._project_view = ProjectView()
         self._docker_view = DockerView(
             self._docker, on_connected=self._on_docker_reconnected
         )
 
+        self._stack.add_named(self._dashboard_view, "dashboard")
         self._stack.add_named(self._project_view, "project")
         self._stack.add_named(self._docker_view, "docker")
         self._split.set_content(self._stack)
@@ -97,10 +105,18 @@ class DevLauncherWindow(Adw.ApplicationWindow):
     def _load_projects(self) -> None:
         self._projects = load_config()
         self._sidebar.load_projects(self._projects)
+        self._dashboard_view.load_projects(self._projects)
+        self._stack.set_visible_child_name("dashboard")
 
     def _on_project_selected(self, project: ProjectConfig) -> None:
         self._stack.set_visible_child_name("project")
+        self._title.set_title(project.name)
         self._project_view.load_project(project)
+        self._sidebar.select_project(project)
+
+    def _on_home(self, _btn) -> None:
+        self._stack.set_visible_child_name("dashboard")
+        self._title.set_title("DevLauncher")
 
     def _on_docker_selected(self) -> None:
         self._stack.set_visible_child_name("docker")
@@ -115,6 +131,31 @@ class DevLauncherWindow(Adw.ApplicationWindow):
             transient_for=self,
         )
         win.present()
+
+    def request_quit(self) -> None:
+        running = self._project_view.get_running_count()
+        if running == 0:
+            self._do_quit()
+            return
+
+        noun = "process" if running == 1 else "processes"
+        dialog = Adw.AlertDialog(
+            heading="Quit DevLauncher?",
+            body=f"{running} {noun} still running. They will be stopped.",
+        )
+        dialog.add_response("cancel", "Cancel")
+        dialog.add_response("quit", "Quit")
+        dialog.set_response_appearance("quit", Adw.ResponseAppearance.DESTRUCTIVE)
+        dialog.set_default_response("cancel")
+        dialog.set_close_response("cancel")
+        dialog.connect("response", lambda d, r: self._do_quit() if r == "quit" else None)
+        self.present()
+        dialog.present(self)
+
+    def _do_quit(self) -> None:
+        self._project_view.stop_all()
+        self._quitting = True
+        self.get_application().quit()
 
     def do_close_request(self) -> bool:
         if self._quitting:
@@ -145,3 +186,4 @@ class DevLauncherWindow(Adw.ApplicationWindow):
     def _on_settings_saved(self, projects: list[ProjectConfig]) -> None:
         self._projects = projects
         self._sidebar.load_projects(self._projects)
+        self._dashboard_view.load_projects(self._projects)

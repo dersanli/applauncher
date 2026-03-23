@@ -6,7 +6,7 @@ import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Adw, Gtk
+from gi.repository import Adw, GLib, Gtk
 
 from .config import CommandConfig, ProcessConfig, ProjectConfig, save_config
 
@@ -196,7 +196,7 @@ class ProjectEditor(Adw.Window):
     def _add_process_row(self, pc: ProcessConfig) -> None:
         expander = Adw.ExpanderRow()
         expander.set_title(pc.name)
-        expander.set_subtitle(pc.command)
+        expander.set_subtitle(GLib.markup_escape_text(pc.command))
 
         name_row = Adw.EntryRow()
         name_row.set_title("Name")
@@ -215,7 +215,7 @@ class ProjectEditor(Adw.Window):
 
         def on_cmd_changed(r):
             pc.command = r.get_text()
-            expander.set_subtitle(pc.command)
+            expander.set_subtitle(GLib.markup_escape_text(pc.command))
 
         cmd_row.connect("changed", on_cmd_changed)
         expander.add_row(cmd_row)
@@ -254,7 +254,7 @@ class ProjectEditor(Adw.Window):
     def _add_command_row(self, cc: CommandConfig) -> None:
         expander = Adw.ExpanderRow()
         expander.set_title(cc.name)
-        expander.set_subtitle(cc.command)
+        expander.set_subtitle(GLib.markup_escape_text(cc.command))
 
         name_row = Adw.EntryRow()
         name_row.set_title("Name")
@@ -273,7 +273,7 @@ class ProjectEditor(Adw.Window):
 
         def on_cmd_changed(r):
             cc.command = r.get_text()
-            expander.set_subtitle(cc.command)
+            expander.set_subtitle(GLib.markup_escape_text(cc.command))
 
         cmd_row.connect("changed", on_cmd_changed)
         expander.add_row(cmd_row)

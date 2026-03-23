@@ -81,11 +81,6 @@ class Sidebar(Gtk.Box):
             self._list.remove(row)
         for project in projects:
             self._list.append(self._make_project_row(project))
-        if projects:
-            first = self._list.get_row_at_index(0)
-            self._list.select_row(first)
-            if self._on_project_selected:
-                self._on_project_selected(projects[0])
 
     def select_project(self, project: ProjectConfig) -> None:
         for i, p in enumerate(self._projects):
