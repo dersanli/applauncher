@@ -8,13 +8,14 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Adw, GLib, Gtk
 
-from .config import CommandConfig, ProcessConfig, ProjectConfig, save_config
+from .config import AppSettings, CommandConfig, ProcessConfig, ProjectConfig, save_app_settings, save_config
 
 
 class SettingsWindow(Adw.PreferencesWindow):
     def __init__(
         self,
         projects: list[ProjectConfig],
+        app_settings: AppSettings,
         on_saved: Optional[Callable[[list[ProjectConfig]], None]] = None,
         **kwargs,
     ) -> None:
@@ -24,10 +25,26 @@ class SettingsWindow(Adw.PreferencesWindow):
         self.set_search_enabled(False)
 
         self._projects = [self._copy_project(p) for p in projects]
+        self._app_settings = app_settings
         self._on_saved = on_saved
 
         self._page = Adw.PreferencesPage()
         self.add(self._page)
+
+        # ── general group ────────────────────────────────────────────────────
+        general_group = Adw.PreferencesGroup()
+        general_group.set_title("General")
+        self._page.add(general_group)
+
+        tray_row = Adw.SwitchRow()
+        tray_row.set_title("Minimize to tray")
+        tray_row.set_subtitle("Closing the window hides it to the system tray")
+        tray_row.set_active(app_settings.minimize_to_tray)
+        tray_row.connect(
+            "notify::active",
+            lambda r, _: setattr(self._app_settings, "minimize_to_tray", r.get_active()),
+        )
+        general_group.add(tray_row)
 
         # ── projects group ───────────────────────────────────────────────────
         self._group = Adw.PreferencesGroup()
@@ -91,6 +108,7 @@ class SettingsWindow(Adw.PreferencesWindow):
 
     def _on_close(self, _win) -> bool:
         save_config(self._projects)
+        save_app_settings(self._app_settings)
         if self._on_saved:
             self._on_saved(self._projects)
         return False

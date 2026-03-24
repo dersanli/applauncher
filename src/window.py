@@ -6,7 +6,7 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Adw, GLib, GObject, Gtk
 
-from .config import ProjectConfig, load_config, save_config
+from .config import AppSettings, ProjectConfig, load_app_settings, load_config, save_config
 from .dashboard_view import DashboardView
 from .docker_manager import DockerManager
 from .docker_view import DockerView
@@ -22,6 +22,7 @@ class DevLauncherWindow(Adw.ApplicationWindow):
         self.set_default_size(1280, 760)
 
         self._projects: list[ProjectConfig] = []
+        self._app_settings: AppSettings = load_app_settings()
         self._quitting = False
 
         # ── Docker ───────────────────────────────────────────────────────────
@@ -127,6 +128,7 @@ class DevLauncherWindow(Adw.ApplicationWindow):
     def _on_settings(self, _btn) -> None:
         win = SettingsWindow(
             projects=self._projects,
+            app_settings=self._app_settings,
             on_saved=self._on_settings_saved,
             transient_for=self,
         )
@@ -160,8 +162,11 @@ class DevLauncherWindow(Adw.ApplicationWindow):
     def do_close_request(self) -> bool:
         if self._quitting:
             return False  # allow normal destroy → app quits
-        self.hide()
-        return True  # prevent destroy; keep app alive in tray
+        if self._app_settings.minimize_to_tray:
+            self.hide()
+            return True  # prevent destroy; keep app alive in tray
+        self.request_quit()
+        return True  # always intercept; request_quit handles the rest
 
     def _connect_docker(self) -> None:
         ok = self._docker.connect()

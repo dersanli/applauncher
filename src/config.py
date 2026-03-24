@@ -11,6 +11,11 @@ CONFIG_FILE = os.path.join(CONFIG_DIR, "projects.toml")
 
 
 @dataclass
+class AppSettings:
+    minimize_to_tray: bool = True
+
+
+@dataclass
 class ProcessConfig:
     name: str
     command: str
@@ -31,12 +36,32 @@ class ProjectConfig:
     commands: list[CommandConfig] = field(default_factory=list)
 
 
-def load_config() -> list[ProjectConfig]:
+def _load_raw() -> dict:
     os.makedirs(CONFIG_DIR, exist_ok=True)
     if not os.path.exists(CONFIG_FILE):
-        return []
+        return {}
     with open(CONFIG_FILE, "rb") as f:
-        data = tomllib.load(f)
+        return tomllib.load(f)
+
+
+def load_app_settings() -> AppSettings:
+    data = _load_raw()
+    app = data.get("app", {})
+    return AppSettings(
+        minimize_to_tray=app.get("minimize_to_tray", True),
+    )
+
+
+def save_app_settings(settings: AppSettings) -> None:
+    os.makedirs(CONFIG_DIR, exist_ok=True)
+    data = _load_raw()
+    data["app"] = {"minimize_to_tray": settings.minimize_to_tray}
+    with open(CONFIG_FILE, "wb") as f:
+        tomli_w.dump(data, f)
+
+
+def load_config() -> list[ProjectConfig]:
+    data = _load_raw()
     projects = []
     for p in data.get("projects", []):
         processes = [
@@ -64,7 +89,8 @@ def load_config() -> list[ProjectConfig]:
 
 def save_config(projects: list[ProjectConfig]) -> None:
     os.makedirs(CONFIG_DIR, exist_ok=True)
-    data = {
+    data = _load_raw()
+    data.update({
         "projects": [
             {
                 "name": p.name,
@@ -84,6 +110,6 @@ def save_config(projects: list[ProjectConfig]) -> None:
             }
             for p in projects
         ]
-    }
+    })
     with open(CONFIG_FILE, "wb") as f:
         tomli_w.dump(data, f)
