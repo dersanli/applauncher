@@ -7,6 +7,7 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, GLib, GObject, Gtk
 
 from .config import AppSettings, ProjectConfig, load_app_settings, load_config, save_config
+from .settings_window import ProjectEditor
 from .dashboard_view import DashboardView
 from .docker_manager import DockerManager
 from .docker_view import DockerView
@@ -74,6 +75,8 @@ class DevLauncherWindow(Adw.ApplicationWindow):
             on_project_selected=self._on_project_selected,
             on_add_project=self._on_add_project,
             on_docker_selected=self._on_docker_selected,
+            on_edit_project=self._on_edit_project,
+            on_delete_project=self._on_delete_project,
         )
         self._split.set_sidebar(self._sidebar)
 
@@ -123,13 +126,55 @@ class DevLauncherWindow(Adw.ApplicationWindow):
         self._stack.set_visible_child_name("docker")
 
     def _on_add_project(self) -> None:
-        self._on_settings(None)
+        new_project = ProjectConfig(name="New Project", directory="~")
+
+        def on_confirm(project: ProjectConfig) -> None:
+            self._projects.append(project)
+            self._reload_projects()
+
+        editor = ProjectEditor(
+            new_project,
+            title="Add Project",
+            on_confirm=on_confirm,
+            transient_for=self,
+        )
+        editor.present()
+
+    def _on_edit_project(self, project: ProjectConfig) -> None:
+        editor = ProjectEditor(
+            project,
+            on_confirm=lambda _: self._reload_projects(),
+            transient_for=self,
+        )
+        editor.present()
+
+    def _reload_projects(self) -> None:
+        save_config(self._projects)
+        self._sidebar.load_projects(self._projects)
+        self._dashboard_view.load_projects(self._projects)
+
+    def _on_delete_project(self, project: ProjectConfig) -> None:
+        dialog = Adw.AlertDialog(
+            heading=f'Delete "{project.name}"?',
+            body="This will remove the project from DevLauncher. Your files will not be affected.",
+        )
+        dialog.add_response("cancel", "Cancel")
+        dialog.add_response("delete", "Delete")
+        dialog.set_response_appearance("delete", Adw.ResponseAppearance.DESTRUCTIVE)
+        dialog.set_default_response("cancel")
+        dialog.set_close_response("cancel")
+        dialog.connect("response", lambda _d, r: self._do_delete_project(project) if r == "delete" else None)
+        dialog.present(self)
+
+    def _do_delete_project(self, project: ProjectConfig) -> None:
+        self._projects.remove(project)
+        self._reload_projects()
+        self._stack.set_visible_child_name("dashboard")
+        self._title.set_title("DevLauncher")
 
     def _on_settings(self, _btn) -> None:
         win = SettingsWindow(
-            projects=self._projects,
             app_settings=self._app_settings,
-            on_saved=self._on_settings_saved,
             transient_for=self,
         )
         win.present()
@@ -188,7 +233,3 @@ class DevLauncherWindow(Adw.ApplicationWindow):
         self._title.set_subtitle("Docker connected")
         self._docker.start_polling(3000)
 
-    def _on_settings_saved(self, projects: list[ProjectConfig]) -> None:
-        self._projects = projects
-        self._sidebar.load_projects(self._projects)
-        self._dashboard_view.load_projects(self._projects)

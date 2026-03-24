@@ -17,11 +17,15 @@ class Sidebar(Gtk.Box):
         on_project_selected: Optional[Callable[[ProjectConfig], None]] = None,
         on_add_project: Optional[Callable] = None,
         on_docker_selected: Optional[Callable] = None,
+        on_edit_project: Optional[Callable[[ProjectConfig], None]] = None,
+        on_delete_project: Optional[Callable[[ProjectConfig], None]] = None,
     ) -> None:
         super().__init__(orientation=Gtk.Orientation.VERTICAL)
         self.set_size_request(220, -1)
         self._on_project_selected = on_project_selected
         self._on_docker_selected = on_docker_selected
+        self._on_edit_project = on_edit_project
+        self._on_delete_project = on_delete_project
         self._projects: list[ProjectConfig] = []
 
         # ── header ───────────────────────────────────────────────────────────
@@ -95,13 +99,37 @@ class Sidebar(Gtk.Box):
     def _make_project_row(self, project: ProjectConfig) -> Gtk.ListBoxRow:
         row = Gtk.ListBoxRow()
         row._project = project
+
+        box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        box.set_margin_start(12)
+        box.set_margin_top(4)
+        box.set_margin_bottom(4)
+
         label = Gtk.Label(label=project.name)
         label.set_halign(Gtk.Align.START)
-        label.set_margin_start(12)
-        label.set_margin_end(12)
-        label.set_margin_top(10)
-        label.set_margin_bottom(10)
-        row.set_child(label)
+        label.set_hexpand(True)
+        label.set_margin_end(4)
+        label.set_margin_top(6)
+        label.set_margin_bottom(6)
+        box.append(label)
+
+        if self._on_edit_project:
+            edit_btn = Gtk.Button(icon_name="document-edit-symbolic")
+            edit_btn.add_css_class("flat")
+            edit_btn.set_tooltip_text("Edit project")
+            edit_btn.set_valign(Gtk.Align.CENTER)
+            edit_btn.connect("clicked", lambda _, p=project: self._on_edit_project(p))
+            box.append(edit_btn)
+
+        if self._on_delete_project:
+            del_btn = Gtk.Button(icon_name="user-trash-symbolic")
+            del_btn.add_css_class("flat")
+            del_btn.set_tooltip_text("Delete project")
+            del_btn.set_valign(Gtk.Align.CENTER)
+            del_btn.connect("clicked", lambda _, p=project: self._on_delete_project(p))
+            box.append(del_btn)
+
+        row.set_child(box)
         return row
 
     def _on_project_row_selected(self, _list, row: Optional[Gtk.ListBoxRow]) -> None:

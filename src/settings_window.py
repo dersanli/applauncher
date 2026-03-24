@@ -1,32 +1,29 @@
 from __future__ import annotations
 
+import os
 from typing import Callable, Optional
 
 import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Adw, GLib, Gtk
+from gi.repository import Adw, GLib, Gio, Gtk
 
-from .config import AppSettings, CommandConfig, ProcessConfig, ProjectConfig, save_app_settings, save_config
+from .config import AppSettings, CommandConfig, ProcessConfig, ProjectConfig, save_app_settings
 
 
 class SettingsWindow(Adw.PreferencesWindow):
     def __init__(
         self,
-        projects: list[ProjectConfig],
         app_settings: AppSettings,
-        on_saved: Optional[Callable[[list[ProjectConfig]], None]] = None,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
         self.set_title("Settings")
-        self.set_default_size(700, 600)
+        self.set_default_size(600, 400)
         self.set_search_enabled(False)
 
-        self._projects = [self._copy_project(p) for p in projects]
         self._app_settings = app_settings
-        self._on_saved = on_saved
 
         self._page = Adw.PreferencesPage()
         self.add(self._page)
@@ -46,90 +43,28 @@ class SettingsWindow(Adw.PreferencesWindow):
         )
         general_group.add(tray_row)
 
-        # ── projects group ───────────────────────────────────────────────────
-        self._group = Adw.PreferencesGroup()
-        self._group.set_title("Projects")
-
-        add_btn = Gtk.Button(label="Add Project")
-        add_btn.add_css_class("flat")
-        add_btn.connect("clicked", self._on_add_project)
-        self._group.set_header_suffix(add_btn)
-
-        self._page.add(self._group)
-        self._project_rows: list[Adw.ActionRow] = []
-        self._rebuild_project_list()
-
         self.connect("close-request", self._on_close)
 
-    # ── project list ─────────────────────────────────────────────────────────
-
-    def _rebuild_project_list(self) -> None:
-        for row in self._project_rows:
-            self._group.remove(row)
-        self._project_rows.clear()
-
-        for project in self._projects:
-            row = Adw.ActionRow()
-            row.set_title(project.name)
-            row.set_subtitle(project.directory)
-            row.set_activatable(True)
-
-            edit_btn = Gtk.Button(icon_name="document-edit-symbolic")
-            edit_btn.add_css_class("flat")
-            edit_btn.set_valign(Gtk.Align.CENTER)
-            edit_btn.set_tooltip_text("Edit project")
-            edit_btn.connect("clicked", lambda _, p=project: self._open_editor(p))
-            row.add_suffix(edit_btn)
-
-            del_btn = Gtk.Button(icon_name="user-trash-symbolic")
-            del_btn.add_css_class("flat")
-            del_btn.add_css_class("destructive-action")
-            del_btn.set_valign(Gtk.Align.CENTER)
-            del_btn.set_tooltip_text("Delete project")
-            del_btn.connect("clicked", lambda _, p=project: self._delete_project(p))
-            row.add_suffix(del_btn)
-
-            self._group.add(row)
-            self._project_rows.append(row)
-
-    def _on_add_project(self, _btn) -> None:
-        new_project = ProjectConfig(name="New Project", directory="~")
-        self._projects.append(new_project)
-        self._rebuild_project_list()
-        self._open_editor(new_project)
-
-    def _delete_project(self, project: ProjectConfig) -> None:
-        self._projects.remove(project)
-        self._rebuild_project_list()
-
-    def _open_editor(self, project: ProjectConfig) -> None:
-        editor = ProjectEditor(project, transient_for=self)
-        editor.present()
-
     def _on_close(self, _win) -> bool:
-        save_config(self._projects)
         save_app_settings(self._app_settings)
-        if self._on_saved:
-            self._on_saved(self._projects)
         return False
-
-    @staticmethod
-    def _copy_project(p: ProjectConfig) -> ProjectConfig:
-        return ProjectConfig(
-            name=p.name,
-            directory=p.directory,
-            processes=[ProcessConfig(pc.name, pc.command, pc.auto_start) for pc in p.processes],
-            commands=[CommandConfig(cc.name, cc.command) for cc in p.commands],
-        )
 
 
 # ── Project editor window ─────────────────────────────────────────────────────
 
 class ProjectEditor(Adw.Window):
-    def __init__(self, project: ProjectConfig, **kwargs) -> None:
+    def __init__(
+        self,
+        project: ProjectConfig,
+        title: str = "Edit Project",
+        on_confirm: Optional[Callable[[ProjectConfig], None]] = None,
+        **kwargs,
+    ) -> None:
         super().__init__(**kwargs)
         self._project = project
-        self.set_title("Edit Project")
+        self._on_confirm = on_confirm
+        self._confirmed = False
+        self.set_title(title)
         self.set_default_size(600, 650)
         self.set_modal(True)
 
@@ -137,9 +72,14 @@ class ProjectEditor(Adw.Window):
         self.set_content(toolbar)
 
         header = Adw.HeaderBar()
+
+        cancel_btn = Gtk.Button(label="Cancel")
+        cancel_btn.connect("clicked", lambda _: self.close())
+        header.pack_start(cancel_btn)
+
         save_btn = Gtk.Button(label="Done")
         save_btn.add_css_class("suggested-action")
-        save_btn.connect("clicked", lambda _: self.close())
+        save_btn.connect("clicked", self._on_done)
         header.pack_end(save_btn)
         toolbar.add_top_bar(header)
 
@@ -176,6 +116,14 @@ class ProjectEditor(Adw.Window):
         self._dir_row.set_title("Directory")
         self._dir_row.set_text(project.directory)
         self._dir_row.connect("changed", lambda r: setattr(project, "directory", r.get_text()))
+
+        browse_btn = Gtk.Button(icon_name="folder-open-symbolic")
+        browse_btn.add_css_class("flat")
+        browse_btn.set_tooltip_text("Choose directory")
+        browse_btn.set_valign(Gtk.Align.CENTER)
+        browse_btn.connect("clicked", self._on_browse_directory)
+        self._dir_row.add_suffix(browse_btn)
+
         general.add(self._dir_row)
 
         # ── Processes ────────────────────────────────────────────────────────
@@ -203,6 +151,30 @@ class ProjectEditor(Adw.Window):
         self._cmd_rows: list[Adw.ExpanderRow] = []
         for cc in project.commands:
             self._add_command_row(cc)
+
+    def _on_browse_directory(self, _btn) -> None:
+        dialog = Gtk.FileDialog()
+        dialog.set_title("Choose Project Directory")
+        initial = os.path.expanduser(self._project.directory)
+        if os.path.isdir(initial):
+            dialog.set_initial_folder(Gio.File.new_for_path(initial))
+        dialog.select_folder(self, None, self._on_directory_chosen)
+
+    def _on_directory_chosen(self, dialog, result) -> None:
+        try:
+            folder = dialog.select_folder_finish(result)
+        except Exception:
+            return
+        if folder:
+            path = folder.get_path()
+            self._project.directory = path
+            self._dir_row.set_text(path)
+
+    def _on_done(self, _btn) -> None:
+        self._confirmed = True
+        if self._on_confirm:
+            self._on_confirm(self._project)
+        self.close()
 
     # ── process rows ─────────────────────────────────────────────────────────
 
