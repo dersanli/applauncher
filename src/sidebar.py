@@ -18,14 +18,12 @@ class Sidebar(Gtk.Box):
         on_add_project: Optional[Callable] = None,
         on_docker_selected: Optional[Callable] = None,
         on_edit_project: Optional[Callable[[ProjectConfig], None]] = None,
-        on_delete_project: Optional[Callable[[ProjectConfig], None]] = None,
     ) -> None:
         super().__init__(orientation=Gtk.Orientation.VERTICAL)
         self.set_size_request(220, -1)
         self._on_project_selected = on_project_selected
         self._on_docker_selected = on_docker_selected
         self._on_edit_project = on_edit_project
-        self._on_delete_project = on_delete_project
         self._projects: list[ProjectConfig] = []
 
         # ── header ───────────────────────────────────────────────────────────
@@ -120,14 +118,6 @@ class Sidebar(Gtk.Box):
             edit_btn.set_valign(Gtk.Align.CENTER)
             edit_btn.connect("clicked", lambda _, p=project: self._on_edit_project(p))
             box.append(edit_btn)
-
-        if self._on_delete_project:
-            del_btn = Gtk.Button(icon_name="user-trash-symbolic")
-            del_btn.add_css_class("flat")
-            del_btn.set_tooltip_text("Delete project")
-            del_btn.set_valign(Gtk.Align.CENTER)
-            del_btn.connect("clicked", lambda _, p=project: self._on_delete_project(p))
-            box.append(del_btn)
 
         row.set_child(box)
         return row

@@ -11,6 +11,16 @@ from gi.repository import Adw, GLib, Gio, Gtk
 
 from .config import AppSettings, CommandConfig, ProcessConfig, ProjectConfig, save_app_settings
 
+_THEME_SCHEMES = {
+    "system": Adw.ColorScheme.DEFAULT,
+    "light": Adw.ColorScheme.FORCE_LIGHT,
+    "dark": Adw.ColorScheme.FORCE_DARK,
+}
+
+
+def _apply_theme(theme: str) -> None:
+    Adw.StyleManager.get_default().set_color_scheme(_THEME_SCHEMES.get(theme, Adw.ColorScheme.DEFAULT))
+
 
 class SettingsWindow(Adw.PreferencesWindow):
     def __init__(
@@ -43,7 +53,20 @@ class SettingsWindow(Adw.PreferencesWindow):
         )
         general_group.add(tray_row)
 
+        _THEMES = ["System", "Light", "Dark"]
+        theme_row = Adw.ComboRow()
+        theme_row.set_title("Theme")
+        theme_row.set_model(Gtk.StringList.new(_THEMES))
+        theme_row.set_selected(_THEMES.index(app_settings.theme.capitalize()))
+        theme_row.connect("notify::selected", self._on_theme_changed)
+        general_group.add(theme_row)
+
         self.connect("close-request", self._on_close)
+
+    def _on_theme_changed(self, row, _param) -> None:
+        themes = ["system", "light", "dark"]
+        self._app_settings.theme = themes[row.get_selected()]
+        _apply_theme(self._app_settings.theme)
 
     def _on_close(self, _win) -> bool:
         save_app_settings(self._app_settings)
@@ -58,11 +81,13 @@ class ProjectEditor(Adw.Window):
         project: ProjectConfig,
         title: str = "Edit Project",
         on_confirm: Optional[Callable[[ProjectConfig], None]] = None,
+        on_delete: Optional[Callable[[ProjectConfig], None]] = None,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
         self._project = project
         self._on_confirm = on_confirm
+        self._on_delete = on_delete
         self._confirmed = False
         self.set_title(title)
         self.set_default_size(600, 650)
@@ -151,6 +176,37 @@ class ProjectEditor(Adw.Window):
         self._cmd_rows: list[Adw.ExpanderRow] = []
         for cc in project.commands:
             self._add_command_row(cc)
+
+        # ── Delete project (edit mode only) ───────────────────────────────────
+        if on_delete:
+            del_btn = Gtk.Button(label="Delete Project")
+            del_btn.add_css_class("destructive-action")
+            del_btn.set_halign(Gtk.Align.CENTER)
+            del_btn.set_margin_top(12)
+            del_btn.set_margin_bottom(12)
+            del_btn.connect("clicked", self._on_delete_clicked)
+            footer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+            footer.append(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL))
+            footer.append(del_btn)
+            toolbar.add_bottom_bar(footer)
+
+    def _on_delete_clicked(self, _btn) -> None:
+        dialog = Adw.AlertDialog(
+            heading=f'Delete "{self._project.name}"?',
+            body="This will remove the project from DevLauncher. Your files will not be affected.",
+        )
+        dialog.add_response("cancel", "Cancel")
+        dialog.add_response("delete", "Delete")
+        dialog.set_response_appearance("delete", Adw.ResponseAppearance.DESTRUCTIVE)
+        dialog.set_default_response("cancel")
+        dialog.set_close_response("cancel")
+        dialog.connect("response", self._on_delete_response)
+        dialog.present(self)
+
+    def _on_delete_response(self, _dialog, response: str) -> None:
+        if response == "delete" and self._on_delete:
+            self._on_delete(self._project)
+            self.close()
 
     def _on_browse_directory(self, _btn) -> None:
         dialog = Gtk.FileDialog()

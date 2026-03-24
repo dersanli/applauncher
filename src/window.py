@@ -76,7 +76,6 @@ class DevLauncherWindow(Adw.ApplicationWindow):
             on_add_project=self._on_add_project,
             on_docker_selected=self._on_docker_selected,
             on_edit_project=self._on_edit_project,
-            on_delete_project=self._on_delete_project,
         )
         self._split.set_sidebar(self._sidebar)
 
@@ -143,28 +142,19 @@ class DevLauncherWindow(Adw.ApplicationWindow):
     def _on_edit_project(self, project: ProjectConfig) -> None:
         editor = ProjectEditor(
             project,
-            on_confirm=lambda _: self._reload_projects(),
+            on_confirm=lambda p: self._reload_projects(edited_project=p),
+            on_delete=self._do_delete_project,
             transient_for=self,
         )
         editor.present()
 
-    def _reload_projects(self) -> None:
+    def _reload_projects(self, edited_project: ProjectConfig | None = None) -> None:
         save_config(self._projects)
         self._sidebar.load_projects(self._projects)
         self._dashboard_view.load_projects(self._projects)
-
-    def _on_delete_project(self, project: ProjectConfig) -> None:
-        dialog = Adw.AlertDialog(
-            heading=f'Delete "{project.name}"?',
-            body="This will remove the project from DevLauncher. Your files will not be affected.",
-        )
-        dialog.add_response("cancel", "Cancel")
-        dialog.add_response("delete", "Delete")
-        dialog.set_response_appearance("delete", Adw.ResponseAppearance.DESTRUCTIVE)
-        dialog.set_default_response("cancel")
-        dialog.set_close_response("cancel")
-        dialog.connect("response", lambda _d, r: self._do_delete_project(project) if r == "delete" else None)
-        dialog.present(self)
+        if edited_project and self._stack.get_visible_child_name() == "project":
+            self._title.set_title(edited_project.name)
+            self._project_view.load_project(edited_project)
 
     def _do_delete_project(self, project: ProjectConfig) -> None:
         self._projects.remove(project)

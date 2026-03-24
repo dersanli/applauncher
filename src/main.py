@@ -11,6 +11,8 @@ from gi.repository import Adw, Gdk, Gtk, Gio
 
 from .tray import TrayIcon
 from .window import DevLauncherWindow
+from .config import load_app_settings
+from .settings_window import _apply_theme
 
 # Register bundled icons so the app icon works without installation
 _ICONS_DIR = os.path.join(os.path.dirname(__file__), "..", "icons")
@@ -34,6 +36,7 @@ class DevLauncherApp(Adw.Application):
 
     def _on_activate(self, _app) -> None:
         _register_icons()
+        _apply_theme(load_app_settings().theme)
         win = self.get_active_window()
         if not win:
             win = DevLauncherWindow(application=self)

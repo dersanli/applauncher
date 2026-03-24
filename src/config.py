@@ -13,6 +13,7 @@ CONFIG_FILE = os.path.join(CONFIG_DIR, "projects.toml")
 @dataclass
 class AppSettings:
     minimize_to_tray: bool = True
+    theme: str = "system"  # "system" | "light" | "dark"
 
 
 @dataclass
@@ -49,13 +50,14 @@ def load_app_settings() -> AppSettings:
     app = data.get("app", {})
     return AppSettings(
         minimize_to_tray=app.get("minimize_to_tray", True),
+        theme=app.get("theme", "system"),
     )
 
 
 def save_app_settings(settings: AppSettings) -> None:
     os.makedirs(CONFIG_DIR, exist_ok=True)
     data = _load_raw()
-    data["app"] = {"minimize_to_tray": settings.minimize_to_tray}
+    data["app"] = {"minimize_to_tray": settings.minimize_to_tray, "theme": settings.theme}
     with open(CONFIG_FILE, "wb") as f:
         tomli_w.dump(data, f)
 

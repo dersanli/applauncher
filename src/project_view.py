@@ -108,6 +108,9 @@ class ProjectView(Gtk.Box):
                 if pc.auto_start:
                     GLib.idle_add(proc.start)
             proc = project_procs[pc.name]
+            if not proc.is_running:
+                proc.command = pc.command
+                proc.cwd = project.directory
             row = ProcessRow(proc, on_select=self._make_select_handler(project.name))
             self._proc_list.append(row)
             self._process_rows.append(row)
