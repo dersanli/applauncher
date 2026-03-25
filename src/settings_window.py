@@ -26,6 +26,8 @@ class SettingsWindow(Adw.PreferencesWindow):
     def __init__(
         self,
         app_settings: AppSettings,
+        on_line_numbers_changed: Optional[Callable[[bool], None]] = None,
+        on_word_wrap_changed: Optional[Callable[[bool], None]] = None,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
@@ -34,6 +36,8 @@ class SettingsWindow(Adw.PreferencesWindow):
         self.set_search_enabled(False)
 
         self._app_settings = app_settings
+        self._on_line_numbers_changed = on_line_numbers_changed
+        self._on_word_wrap_changed = on_word_wrap_changed
 
         self._page = Adw.PreferencesPage()
         self.add(self._page)
@@ -61,7 +65,42 @@ class SettingsWindow(Adw.PreferencesWindow):
         theme_row.connect("notify::selected", self._on_theme_changed)
         general_group.add(theme_row)
 
+        # ── logs group ───────────────────────────────────────────────────────
+        logs_group = Adw.PreferencesGroup()
+        logs_group.set_title("Logs")
+        self._page.add(logs_group)
+
+        word_wrap_row = Adw.SwitchRow()
+        word_wrap_row.set_title("Word wrap")
+        word_wrap_row.set_active(app_settings.log_word_wrap and not app_settings.log_line_numbers)
+        word_wrap_row.set_sensitive(not app_settings.log_line_numbers)
+        word_wrap_row.connect("notify::active", self._on_word_wrap_toggled)
+        logs_group.add(word_wrap_row)
+        self._word_wrap_row = word_wrap_row
+
+        line_numbers_row = Adw.SwitchRow()
+        line_numbers_row.set_title("Show line numbers")
+        line_numbers_row.set_active(app_settings.log_line_numbers)
+        line_numbers_row.connect("notify::active", self._on_line_numbers_toggled)
+        logs_group.add(line_numbers_row)
+
         self.connect("close-request", self._on_close)
+
+    def _on_line_numbers_toggled(self, row, _param) -> None:
+        active = row.get_active()
+        self._app_settings.log_line_numbers = active
+        self._word_wrap_row.set_sensitive(not active)
+        if active:
+            self._word_wrap_row.set_active(False)
+        else:
+            self._word_wrap_row.set_active(self._app_settings.log_word_wrap)
+        if self._on_line_numbers_changed:
+            self._on_line_numbers_changed(active)
+
+    def _on_word_wrap_toggled(self, row, _param) -> None:
+        self._app_settings.log_word_wrap = row.get_active()
+        if self._on_word_wrap_changed:
+            self._on_word_wrap_changed(row.get_active())
 
     def _on_theme_changed(self, row, _param) -> None:
         themes = ["system", "light", "dark"]

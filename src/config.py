@@ -14,6 +14,8 @@ CONFIG_FILE = os.path.join(CONFIG_DIR, "projects.toml")
 class AppSettings:
     minimize_to_tray: bool = True
     theme: str = "system"  # "system" | "light" | "dark"
+    log_line_numbers: bool = False
+    log_word_wrap: bool = True
 
 
 @dataclass
@@ -51,13 +53,15 @@ def load_app_settings() -> AppSettings:
     return AppSettings(
         minimize_to_tray=app.get("minimize_to_tray", True),
         theme=app.get("theme", "system"),
+        log_line_numbers=app.get("log_line_numbers", False),
+        log_word_wrap=app.get("log_word_wrap", True),
     )
 
 
 def save_app_settings(settings: AppSettings) -> None:
     os.makedirs(CONFIG_DIR, exist_ok=True)
     data = _load_raw()
-    data["app"] = {"minimize_to_tray": settings.minimize_to_tray, "theme": settings.theme}
+    data["app"] = {"minimize_to_tray": settings.minimize_to_tray, "theme": settings.theme, "log_line_numbers": settings.log_line_numbers, "log_word_wrap": settings.log_word_wrap}
     with open(CONFIG_FILE, "wb") as f:
         tomli_w.dump(data, f)
 

@@ -8,9 +8,12 @@ from gi.repository import Adw, GLib, Gtk
 
 
 class LogPane(Gtk.Box):
-    def __init__(self) -> None:
+    def __init__(self, show_line_numbers: bool = False, word_wrap: bool = True) -> None:
         super().__init__(orientation=Gtk.Orientation.VERTICAL)
         self._current_process = None
+        self._show_line_numbers = show_line_numbers
+        self._word_wrap = word_wrap
+        self._line_count = 0
 
         # ── header bar ───────────────────────────────────────────────────────
         header = Gtk.Box(
@@ -47,7 +50,7 @@ class LogPane(Gtk.Box):
         self._view.set_editable(False)
         self._view.set_cursor_visible(False)
         self._view.set_monospace(True)
-        self._view.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
+        self._view.set_wrap_mode(Gtk.WrapMode.WORD_CHAR if word_wrap else Gtk.WrapMode.NONE)
         self._view.set_margin_start(12)
         self._view.set_margin_end(12)
         self._view.set_margin_top(8)
@@ -66,6 +69,7 @@ class LogPane(Gtk.Box):
         self._detach_current()
         self._current_process = process
         self._buffer.set_text("")
+        self._line_count = 0
 
         if process is None:
             self._title.set_label("Logs")
@@ -75,6 +79,25 @@ class LogPane(Gtk.Box):
         for line in process.log_lines:
             self._insert(line)
         process.on_output = self._on_line
+
+    def set_show_line_numbers(self, show: bool) -> None:
+        if self._show_line_numbers == show:
+            return
+        self._show_line_numbers = show
+        if show:
+            self._view.set_wrap_mode(Gtk.WrapMode.NONE)
+        else:
+            self._view.set_wrap_mode(Gtk.WrapMode.WORD_CHAR if self._word_wrap else Gtk.WrapMode.NONE)
+        self._line_count = 0
+        self._buffer.set_text("")
+        if self._current_process:
+            for line in self._current_process.log_lines:
+                self._insert(line)
+
+    def set_word_wrap(self, wrap: bool) -> None:
+        self._word_wrap = wrap
+        if not self._show_line_numbers:
+            self._view.set_wrap_mode(Gtk.WrapMode.WORD_CHAR if wrap else Gtk.WrapMode.NONE)
 
     def detach(self) -> None:
         """Disconnect from the current process without clearing the buffer."""
@@ -101,6 +124,9 @@ class LogPane(Gtk.Box):
         self._insert(line)
 
     def _insert(self, text: str) -> None:
+        if self._show_line_numbers:
+            self._line_count += 1
+            text = f"{self._line_count:>4} │ {text}"
         end = self._buffer.get_end_iter()
         self._buffer.insert(end, text)
         GLib.idle_add(self._scroll_to_bottom)

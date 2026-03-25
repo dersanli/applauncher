@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Callable, Optional
+from typing import Optional
 
 import gi
 
@@ -21,11 +21,9 @@ class ProcessRow(Gtk.ListBoxRow):
     def __init__(
         self,
         process: ManagedProcess,
-        on_select: Optional[Callable[[ManagedProcess], None]] = None,
     ) -> None:
         super().__init__()
         self.process = process
-        self._on_select = on_select
 
         self.set_activatable(False)
 
@@ -64,13 +62,6 @@ class ProcessRow(Gtk.ListBoxRow):
         text_box.append(subtitle)
         outer.append(text_box)
 
-        # ── log button ────────────────────────────────────────────────────────
-        log_btn = Gtk.Button(label="Logs")
-        log_btn.add_css_class("flat")
-        log_btn.set_valign(Gtk.Align.CENTER)
-        log_btn.connect("clicked", lambda _: on_select and on_select(process))
-        outer.append(log_btn)
-
         # ── start / stop ─────────────────────────────────────────────────────
         self._start_btn = Gtk.Button(label="Start")
         self._start_btn.add_css_class("suggested-action")
@@ -81,7 +72,7 @@ class ProcessRow(Gtk.ListBoxRow):
         self._stop_btn = Gtk.Button(label="Stop")
         self._stop_btn.add_css_class("destructive-action")
         self._stop_btn.set_valign(Gtk.Align.CENTER)
-        self._stop_btn.connect("clicked", lambda _: process.stop())
+        self._stop_btn.connect("clicked", self._on_stop_clicked)
         outer.append(self._stop_btn)
 
         self.set_child(outer)
@@ -99,10 +90,18 @@ class ProcessRow(Gtk.ListBoxRow):
 
     # ── private ──────────────────────────────────────────────────────────────
 
+    def _select(self) -> None:
+        parent = self.get_parent()
+        if parent:
+            parent.select_row(self)
+
     def _on_start_clicked(self, _btn) -> None:
-        if self._on_select:
-            self._on_select(self.process)
+        self._select()
         self.process.start()
+
+    def _on_stop_clicked(self, _btn) -> None:
+        self._select()
+        self.process.stop()
 
     def _on_status_change(self, _status: str) -> None:
         self._refresh_dot()

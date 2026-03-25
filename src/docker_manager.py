@@ -50,6 +50,7 @@ class DockerManager:
         self._poll_id: Optional[int] = None
 
         self.on_containers_updated: Optional[Callable[[list[dict]], None]] = None
+        self.on_disconnected: Optional[Callable] = None
         self.on_error: Optional[Callable[[str], None]] = None
 
     def connect(self) -> bool:
@@ -131,9 +132,15 @@ class DockerManager:
 
     def _poll(self) -> bool:
         def fetch() -> None:
-            containers = self.get_containers()
-            if self.on_containers_updated:
-                GLib.idle_add(self.on_containers_updated, containers)
+            try:
+                self._client.ping()
+                containers = self.get_containers()
+                if self.on_containers_updated:
+                    GLib.idle_add(self.on_containers_updated, containers)
+            except Exception:
+                self._available = False
+                if self.on_disconnected:
+                    GLib.idle_add(self.on_disconnected)
 
         threading.Thread(target=fetch, daemon=True).start()
         return GLib.SOURCE_CONTINUE

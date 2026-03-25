@@ -28,6 +28,7 @@ class DevLauncherWindow(Adw.ApplicationWindow):
 
         # ── Docker ───────────────────────────────────────────────────────────
         self._docker = DockerManager()
+        self._docker.on_disconnected = self._on_docker_disconnected
 
         # ── Main layout ──────────────────────────────────────────────────────
         toolbar_view = Adw.ToolbarView()
@@ -84,7 +85,10 @@ class DevLauncherWindow(Adw.ApplicationWindow):
         self._stack.set_transition_type(Gtk.StackTransitionType.CROSSFADE)
 
         self._dashboard_view = DashboardView(on_project_selected=self._on_project_selected)
-        self._project_view = ProjectView()
+        self._project_view = ProjectView(
+            show_line_numbers=self._app_settings.log_line_numbers,
+            word_wrap=self._app_settings.log_word_wrap,
+        )
         self._docker_view = DockerView(
             self._docker, on_connected=self._on_docker_reconnected
         )
@@ -95,7 +99,6 @@ class DevLauncherWindow(Adw.ApplicationWindow):
         self._split.set_content(self._stack)
 
         self._title = title
-        self._title.set_subtitle("Connecting to Docker…")
 
         # Connect to Docker in background to avoid blocking the UI
         import threading
@@ -165,6 +168,8 @@ class DevLauncherWindow(Adw.ApplicationWindow):
     def _on_settings(self, _btn) -> None:
         win = SettingsWindow(
             app_settings=self._app_settings,
+            on_line_numbers_changed=self._project_view.set_log_line_numbers,
+            on_word_wrap_changed=self._project_view.set_log_word_wrap,
             transient_for=self,
         )
         win.present()
@@ -209,17 +214,22 @@ class DevLauncherWindow(Adw.ApplicationWindow):
 
     def _on_docker_connected(self, ok: bool) -> bool:
         if ok:
-            self._title.set_subtitle("Docker connected")
+            self._sidebar.set_docker_status(True)
             self._docker.start_polling(3000)
             self._docker_view.notify_docker_connected()
         elif self._docker.is_desktop_context:
-            self._title.set_subtitle("Docker Desktop not running")
+            self._sidebar.set_docker_status(False)
             self._docker_view.notify_docker_unavailable()
         else:
-            self._title.set_subtitle("Docker unavailable")
+            self._sidebar.set_docker_status(False)
         return False
 
+    def _on_docker_disconnected(self) -> None:
+        self._sidebar.set_docker_status(False)
+        self._docker.stop_polling()
+        self._docker_view.notify_docker_disconnected()
+
     def _on_docker_reconnected(self) -> None:
-        self._title.set_subtitle("Docker connected")
+        self._sidebar.set_docker_status(True)
         self._docker.start_polling(3000)
 

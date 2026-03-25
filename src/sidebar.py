@@ -65,7 +65,12 @@ class Sidebar(Gtk.Box):
         box.append(Gtk.Image.new_from_icon_name("application-x-executable-symbolic"))
         lbl = Gtk.Label(label="Docker")
         lbl.set_halign(Gtk.Align.START)
+        lbl.set_hexpand(True)
         box.append(lbl)
+        self._docker_status_dot = Gtk.Label(label="●")
+        self._docker_status_dot.set_valign(Gtk.Align.CENTER)
+        self._docker_status_dot.add_css_class("dim-label")
+        box.append(self._docker_status_dot)
         docker_row.set_child(box)
         self._bottom_list.append(docker_row)
 
@@ -76,6 +81,22 @@ class Sidebar(Gtk.Box):
         self.append(self._bottom_list)
 
     # ── public API ───────────────────────────────────────────────────────────
+
+    def set_docker_status(self, connected: bool | None) -> None:
+        """Update the Docker status dot. True=connected, False=unavailable, None=connecting."""
+        dot = self._docker_status_dot
+        dot.remove_css_class("success")
+        dot.remove_css_class("error")
+        dot.remove_css_class("dim-label")
+        if connected is True:
+            dot.add_css_class("success")
+            dot.set_tooltip_text("Docker connected")
+        elif connected is False:
+            dot.add_css_class("error")
+            dot.set_tooltip_text("Docker is not running")
+        else:
+            dot.add_css_class("dim-label")
+            dot.set_tooltip_text("Connecting to Docker…")
 
     def load_projects(self, projects: list[ProjectConfig]) -> None:
         self._projects = projects

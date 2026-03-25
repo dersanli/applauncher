@@ -35,7 +35,7 @@ def _make_section(title: str) -> tuple[Gtk.Box, Gtk.ListBox]:
 
 
 class ProjectView(Gtk.Box):
-    def __init__(self) -> None:
+    def __init__(self, show_line_numbers: bool = False, word_wrap: bool = True) -> None:
         super().__init__(orientation=Gtk.Orientation.VERTICAL)
         self._project: Optional[ProjectConfig] = None
         self._all_processes: dict[str, dict[str, ManagedProcess]] = {}  # project_name -> {proc_name -> proc}
@@ -71,6 +71,8 @@ class ProjectView(Gtk.Box):
         )
 
         proc_section, self._proc_list = _make_section("Processes")
+        self._proc_list.set_selection_mode(Gtk.SelectionMode.SINGLE)
+        self._proc_list.connect("row-selected", self._on_proc_row_selected)
         cmd_section, self._cmd_list = _make_section("Commands")
 
         inner.append(proc_section)
@@ -81,7 +83,7 @@ class ProjectView(Gtk.Box):
 
         # Log pane
         self._content.append(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL))
-        self._log_pane = LogPane()
+        self._log_pane = LogPane(show_line_numbers=show_line_numbers, word_wrap=word_wrap)
         self._log_pane.set_size_request(-1, 220)
         self._content.append(self._log_pane)
 
@@ -111,14 +113,17 @@ class ProjectView(Gtk.Box):
             if not proc.is_running:
                 proc.command = pc.command
                 proc.cwd = project.directory
-            row = ProcessRow(proc, on_select=self._make_select_handler(project.name))
+            row = ProcessRow(proc)
             self._proc_list.append(row)
             self._process_rows.append(row)
 
         # Restore last viewed process logs for this project, or clear
         last_name = self._last_proc_name.get(project.name)
         if last_name and last_name in project_procs:
-            self._log_pane.set_process(project_procs[last_name])
+            for i, row in enumerate(self._process_rows):
+                if row.process.name == last_name:
+                    self._proc_list.select_row(row)
+                    break
         else:
             self._log_pane.set_process(None)
 
@@ -126,6 +131,12 @@ class ProjectView(Gtk.Box):
             row = CommandRow(cc, project.directory, on_output=self._on_command_output)
             self._cmd_list.append(row)
             self._command_rows.append(row)
+
+    def set_log_line_numbers(self, show: bool) -> None:
+        self._log_pane.set_show_line_numbers(show)
+
+    def set_log_word_wrap(self, wrap: bool) -> None:
+        self._log_pane.set_word_wrap(wrap)
 
     def get_running_count(self) -> int:
         return sum(
@@ -154,11 +165,11 @@ class ProjectView(Gtk.Box):
         self._command_rows.clear()
         self._log_pane.detach()
 
-    def _make_select_handler(self, project_name: str):
-        def on_select(proc) -> None:
-            self._last_proc_name[project_name] = proc.name
-            self._log_pane.set_process(proc)
-        return on_select
+    def _on_proc_row_selected(self, _list, row) -> None:
+        if row is None or self._project is None:
+            return
+        self._last_proc_name[self._project.name] = row.process.name
+        self._log_pane.set_process(row.process)
 
     def _make_crash_handler(self, proc: ManagedProcess, project_name: str):
         def handler(status: str) -> None:
