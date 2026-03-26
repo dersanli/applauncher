@@ -38,7 +38,7 @@ class LogPane(Gtk.Box):
         self._show_line_numbers = show_line_numbers
         self._word_wrap = word_wrap
         self._line_count = 0
-        self._active_filters: set[str] = set()
+        self._filters_per_process: dict[str, set[str]] = {}  # proc name → active levels
 
         # ── header bar ───────────────────────────────────────────────────────
         header = Gtk.Box(
@@ -106,9 +106,11 @@ class LogPane(Gtk.Box):
 
         if process is None:
             self._title.set_label("Logs")
+            self._restore_filter_ui("")
             return
 
         self._title.set_label(f"Logs — {process.name}")
+        self._restore_filter_ui(process.name)
         for line in process.log_lines:
             self._insert(line)
         process.on_output = self._on_line
@@ -165,27 +167,44 @@ class LogPane(Gtk.Box):
         popover.set_child(box)
         return popover
 
+    def _active_filters(self) -> set[str]:
+        if self._current_process is None:
+            return set()
+        return self._filters_per_process.get(self._current_process.name, set())
+
     def _on_filter_toggled(self, check: Gtk.CheckButton, level: str) -> None:
+        if self._current_process is None:
+            return
+        filters = self._filters_per_process.setdefault(self._current_process.name, set())
         if check.get_active():
-            self._active_filters.add(level)
+            filters.add(level)
         else:
-            self._active_filters.discard(level)
+            filters.discard(level)
         self._update_filter_btn_style()
         self._rerender()
 
+    def _restore_filter_ui(self, proc_name: str) -> None:
+        filters = self._filters_per_process.get(proc_name, set())
+        for level, check in self._filter_checks.items():
+            check.handler_block_by_func(self._on_filter_toggled)
+            check.set_active(level in filters)
+            check.handler_unblock_by_func(self._on_filter_toggled)
+        self._update_filter_btn_style()
+
     def _update_filter_btn_style(self) -> None:
-        if self._active_filters:
+        if self._active_filters():
             self._filter_btn.add_css_class("suggested-action")
         else:
             self._filter_btn.remove_css_class("suggested-action")
 
     def _passes_filter(self, line: str) -> bool:
-        if not self._active_filters:
+        filters = self._active_filters()
+        if not filters:
             return True
         level = _detect_level(line)
         if level is None:
             return True  # unclassified lines (stack traces etc.) always show
-        return level in self._active_filters
+        return level in filters
 
     def _rerender(self) -> None:
         self._buffer.set_text("")
