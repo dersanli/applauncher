@@ -1,10 +1,34 @@
 from __future__ import annotations
 
+import re
+
 import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Adw, GLib, Gtk
+
+# ── log level detection ───────────────────────────────────────────────────────
+
+_LEVEL_RE = re.compile(
+    r'\b(DEBUG|TRACE|VERBOSE|INFO|WARN(?:ING)?|ERROR|CRITICAL|FATAL)\b',
+    re.IGNORECASE,
+)
+
+_LEVEL_MAP = {
+    "debug": "debug", "trace": "debug", "verbose": "debug",
+    "info": "info",
+    "warn": "warning", "warning": "warning",
+    "error": "error", "critical": "error", "fatal": "error",
+}
+
+_LEVELS = ["debug", "info", "warning", "error"]
+_LEVEL_LABELS = {"debug": "Debug", "info": "Info", "warning": "Warning", "error": "Error"}
+
+
+def _detect_level(line: str) -> str | None:
+    m = _LEVEL_RE.search(line)
+    return _LEVEL_MAP.get(m.group(1).lower()) if m else None
 
 
 class LogPane(Gtk.Box):
@@ -14,6 +38,7 @@ class LogPane(Gtk.Box):
         self._show_line_numbers = show_line_numbers
         self._word_wrap = word_wrap
         self._line_count = 0
+        self._active_filters: set[str] = set()
 
         # ── header bar ───────────────────────────────────────────────────────
         header = Gtk.Box(
@@ -30,6 +55,14 @@ class LogPane(Gtk.Box):
         self._title.set_halign(Gtk.Align.START)
         self._title.set_hexpand(True)
         header.append(self._title)
+
+        # ── filter menu button ────────────────────────────────────────────────
+        self._filter_btn = Gtk.MenuButton()
+        self._filter_btn.set_icon_name("preferences-other-symbolic")
+        self._filter_btn.add_css_class("flat")
+        self._filter_btn.set_tooltip_text("Filter by log level")
+        self._filter_btn.set_popover(self._build_filter_popover())
+        header.append(self._filter_btn)
 
         clear_btn = Gtk.Button(icon_name="edit-clear-symbolic")
         clear_btn.add_css_class("flat")
@@ -88,11 +121,7 @@ class LogPane(Gtk.Box):
             self._view.set_wrap_mode(Gtk.WrapMode.NONE)
         else:
             self._view.set_wrap_mode(Gtk.WrapMode.WORD_CHAR if self._word_wrap else Gtk.WrapMode.NONE)
-        self._line_count = 0
-        self._buffer.set_text("")
-        if self._current_process:
-            for line in self._current_process.log_lines:
-                self._insert(line)
+        self._rerender()
 
     def set_word_wrap(self, wrap: bool) -> None:
         self._word_wrap = wrap
@@ -107,7 +136,6 @@ class LogPane(Gtk.Box):
     def append_text(self, text: str, label: str = "Command output") -> None:
         """Append arbitrary text (used for one-off commands)."""
         if self._current_process:
-            # Detach from current process
             if self._current_process.on_output == self._on_line:
                 self._current_process.on_output = None
             self._current_process = None
@@ -115,6 +143,56 @@ class LogPane(Gtk.Box):
         self._insert(text)
 
     # ── private ──────────────────────────────────────────────────────────────
+
+    def _build_filter_popover(self) -> Gtk.Popover:
+        popover = Gtk.Popover()
+        box = Gtk.Box(
+            orientation=Gtk.Orientation.VERTICAL,
+            spacing=4,
+            margin_start=8,
+            margin_end=8,
+            margin_top=8,
+            margin_bottom=8,
+        )
+
+        self._filter_checks: dict[str, Gtk.CheckButton] = {}
+        for level in _LEVELS:
+            check = Gtk.CheckButton(label=_LEVEL_LABELS[level])
+            check.connect("toggled", self._on_filter_toggled, level)
+            box.append(check)
+            self._filter_checks[level] = check
+
+        popover.set_child(box)
+        return popover
+
+    def _on_filter_toggled(self, check: Gtk.CheckButton, level: str) -> None:
+        if check.get_active():
+            self._active_filters.add(level)
+        else:
+            self._active_filters.discard(level)
+        self._update_filter_btn_style()
+        self._rerender()
+
+    def _update_filter_btn_style(self) -> None:
+        if self._active_filters:
+            self._filter_btn.add_css_class("suggested-action")
+        else:
+            self._filter_btn.remove_css_class("suggested-action")
+
+    def _passes_filter(self, line: str) -> bool:
+        if not self._active_filters:
+            return True
+        level = _detect_level(line)
+        if level is None:
+            return True  # unclassified lines (stack traces etc.) always show
+        return level in self._active_filters
+
+    def _rerender(self) -> None:
+        self._buffer.set_text("")
+        self._line_count = 0
+        if self._current_process:
+            for line in self._current_process.log_lines:
+                self._insert(line)
 
     def _detach_current(self) -> None:
         if self._current_process and self._current_process.on_output == self._on_line:
@@ -124,6 +202,8 @@ class LogPane(Gtk.Box):
         self._insert(line)
 
     def _insert(self, text: str) -> None:
+        if not self._passes_filter(text):
+            return
         if self._show_line_numbers:
             self._line_count += 1
             text = f"{self._line_count:>4} │ {text}"
@@ -138,5 +218,6 @@ class LogPane(Gtk.Box):
 
     def _on_clear(self, _btn) -> None:
         self._buffer.set_text("")
+        self._line_count = 0
         if self._current_process:
             self._current_process.log_lines.clear()
