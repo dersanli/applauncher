@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import signal
 import subprocess
 import threading
 from typing import Callable, Optional
@@ -48,6 +49,7 @@ class ManagedProcess:
                 stderr=subprocess.STDOUT,
                 text=True,
                 bufsize=1,
+                start_new_session=True,
             )
             self._set_status(ProcessStatus.RUNNING)
             threading.Thread(target=self._reader, daemon=True).start()
@@ -57,11 +59,17 @@ class ManagedProcess:
 
     def stop(self) -> None:
         if self._process and self.is_running:
-            self._process.terminate()
+            try:
+                os.killpg(os.getpgid(self._process.pid), signal.SIGTERM)
+            except ProcessLookupError:
+                self._process.terminate()
             try:
                 self._process.wait(timeout=5)
             except subprocess.TimeoutExpired:
-                self._process.kill()
+                try:
+                    os.killpg(os.getpgid(self._process.pid), signal.SIGKILL)
+                except ProcessLookupError:
+                    self._process.kill()
                 self._process.wait()
         self._set_status(ProcessStatus.STOPPED)
 

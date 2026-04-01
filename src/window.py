@@ -4,7 +4,7 @@ import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Adw, GLib, GObject, Gtk
+from gi.repository import Adw, GLib, Gtk
 
 from .config import AppSettings, ProjectConfig, load_app_settings, load_config, save_config
 from .settings_window import ProjectEditor
@@ -57,20 +57,6 @@ class DevLauncherWindow(Adw.ApplicationWindow):
 
         toolbar_view.add_top_bar(header)
 
-        # Split view
-        self._split = Adw.OverlaySplitView()
-        self._split.set_min_sidebar_width(200)
-        self._split.set_max_sidebar_width(280)
-        toolbar_view.set_content(self._split)
-
-        # Bind sidebar toggle button
-        self._toggle_btn.bind_property(
-            "active",
-            self._split,
-            "show-sidebar",
-            GObject.BindingFlags.BIDIRECTIONAL | GObject.BindingFlags.SYNC_CREATE,
-        )
-
         # Sidebar
         self._sidebar = Sidebar(
             on_project_selected=self._on_project_selected,
@@ -78,11 +64,22 @@ class DevLauncherWindow(Adw.ApplicationWindow):
             on_docker_selected=self._on_docker_selected,
             on_edit_project=self._on_edit_project,
         )
-        self._split.set_sidebar(self._sidebar)
 
         # Content stack
         self._stack = Gtk.Stack()
         self._stack.set_transition_type(Gtk.StackTransitionType.CROSSFADE)
+
+        # Main horizontal paned (sidebar | content)
+        self._paned = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)
+        self._paned.set_start_child(self._sidebar)
+        self._paned.set_end_child(self._stack)
+        self._paned.set_position(240)
+        self._paned.set_shrink_start_child(False)
+        self._paned.set_shrink_end_child(False)
+        self._sidebar_width = 240
+        toolbar_view.set_content(self._paned)
+
+        self._toggle_btn.connect("toggled", self._on_sidebar_toggle)
 
         self._dashboard_view = DashboardView(on_project_selected=self._on_project_selected)
         self._project_view = ProjectView(
@@ -96,7 +93,6 @@ class DevLauncherWindow(Adw.ApplicationWindow):
         self._stack.add_named(self._dashboard_view, "dashboard")
         self._stack.add_named(self._project_view, "project")
         self._stack.add_named(self._docker_view, "docker")
-        self._split.set_content(self._stack)
 
         self._title = title
 
@@ -119,6 +115,14 @@ class DevLauncherWindow(Adw.ApplicationWindow):
         self._title.set_title(project.name)
         self._project_view.load_project(project)
         self._sidebar.select_project(project)
+
+    def _on_sidebar_toggle(self, btn: Gtk.ToggleButton) -> None:
+        if btn.get_active():
+            self._sidebar.set_visible(True)
+            self._paned.set_position(self._sidebar_width)
+        else:
+            self._sidebar_width = self._paned.get_position()
+            self._sidebar.set_visible(False)
 
     def _on_home(self, _btn) -> None:
         self._stack.set_visible_child_name("dashboard")

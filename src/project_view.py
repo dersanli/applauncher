@@ -79,13 +79,20 @@ class ProjectView(Gtk.Box):
         inner.append(cmd_section)
         clamp.set_child(inner)
         scroll.set_child(clamp)
-        self._content.append(scroll)
 
-        # Log pane
-        self._content.append(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL))
+        # Vertical paned: processes+commands (top) | log pane (bottom)
         self._log_pane = LogPane(show_line_numbers=show_line_numbers, word_wrap=word_wrap)
-        self._log_pane.set_size_request(-1, 220)
-        self._content.append(self._log_pane)
+        self._log_pane.set_size_request(-1, 360)
+
+        vpaned = Gtk.Paned(orientation=Gtk.Orientation.VERTICAL)
+        vpaned.set_vexpand(True)
+        vpaned.set_start_child(scroll)
+        vpaned.set_end_child(self._log_pane)
+        vpaned.set_shrink_start_child(False)
+        vpaned.set_shrink_end_child(False)
+        vpaned.set_resize_start_child(True)
+        vpaned.set_resize_end_child(False)
+        self._content.append(vpaned)
 
         self.append(self._empty)
         self.append(self._content)
