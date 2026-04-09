@@ -9,6 +9,43 @@ from typing import Callable, Optional
 from gi.repository import GLib
 
 
+def _user_path() -> str:
+    """Build a PATH that includes user-local tools (nvm, pnpm, pyenv etc.)
+    by sourcing ~/.zshrc, which is where these tools register themselves."""
+    home = os.path.expanduser("~")
+
+    # Try sourcing .zshrc in a non-interactive zsh to pick up nvm/pnpm/pyenv
+    zshrc = os.path.join(home, ".zshrc")
+    for shell in ("/bin/zsh", "/usr/bin/zsh"):
+        if not os.path.exists(shell) or not os.path.exists(zshrc):
+            continue
+        try:
+            result = subprocess.run(
+                [shell, "-c", f"source {zshrc} 2>/dev/null; echo $PATH"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                return result.stdout.strip()
+        except Exception:
+            continue
+
+    # Hard fallback: stitch known user-local paths together
+    extra = [f"{home}/.local/share/pnpm", f"{home}/.local/bin"]
+
+    # nvm: read the default alias to find the active node version
+    nvm_alias = os.path.join(home, ".nvm", "alias", "default")
+    if os.path.isfile(nvm_alias):
+        with open(nvm_alias) as f:
+            version = f.read().strip().lstrip("v")
+        node_bin = os.path.join(home, ".nvm", "versions", "node", f"v{version}", "bin")
+        if os.path.isdir(node_bin):
+            extra.append(node_bin)
+
+    return ":".join(extra) + ":" + os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin")
+
+
 class ProcessStatus:
     STOPPED = "stopped"
     RUNNING = "running"
@@ -50,6 +87,7 @@ class ManagedProcess:
                 text=True,
                 bufsize=1,
                 start_new_session=True,
+                env={**os.environ, "PATH": _user_path()},
             )
             self._set_status(ProcessStatus.RUNNING)
             threading.Thread(target=self._reader, daemon=True).start()

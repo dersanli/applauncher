@@ -13,6 +13,41 @@ from gi.repository import GLib, Gtk
 from .config import CommandConfig
 
 
+def _user_path() -> str:
+    """Build a PATH that includes user-local tools (nvm, pnpm, pyenv etc.)
+    by sourcing ~/.zshrc, which is where these tools register themselves."""
+    home = os.path.expanduser("~")
+
+    zshrc = os.path.join(home, ".zshrc")
+    for shell in ("/bin/zsh", "/usr/bin/zsh"):
+        if not os.path.exists(shell) or not os.path.exists(zshrc):
+            continue
+        try:
+            result = subprocess.run(
+                [shell, "-c", f"source {zshrc} 2>/dev/null; echo $PATH"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                return result.stdout.strip()
+        except Exception:
+            continue
+
+    # Hard fallback: stitch known user-local paths together
+    extra = [f"{home}/.local/share/pnpm", f"{home}/.local/bin"]
+
+    nvm_alias = os.path.join(home, ".nvm", "alias", "default")
+    if os.path.isfile(nvm_alias):
+        with open(nvm_alias) as f:
+            version = f.read().strip().lstrip("v")
+        node_bin = os.path.join(home, ".nvm", "versions", "node", f"v{version}", "bin")
+        if os.path.isdir(node_bin):
+            extra.append(node_bin)
+
+    return ":".join(extra) + ":" + os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin")
+
+
 class CommandRow(Gtk.ListBoxRow):
     def __init__(
         self,
@@ -69,6 +104,7 @@ class CommandRow(Gtk.ListBoxRow):
 
         def _run() -> None:
             try:
+                env = {**os.environ, "PATH": _user_path()}
                 proc = subprocess.Popen(
                     self._config.command,
                     shell=True,
@@ -76,6 +112,7 @@ class CommandRow(Gtk.ListBoxRow):
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
                     text=True,
+                    env=env,
                 )
                 assert proc.stdout
                 for line in iter(proc.stdout.readline, ""):
